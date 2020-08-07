@@ -14,6 +14,7 @@ class Update extends Command
      * @var string
      */
     protected $signature = 'currency:update
+                                {--e|exchangeratesapi : Get rates from ExchangeRatesApi.io}
                                 {--o|openexchangerates : Get rates from OpenExchangeRates.org}
                                 {--g|google : Get rates from Google Finance}';
 
@@ -61,6 +62,11 @@ class Update extends Command
         // Get Settings
         $defaultCurrency = $this->currency->config('default');
 
+        if ($this->input->getOption('exchangeratesapi')) {
+            // Get rates from exchangeratesapi
+            return $this->updateFromExchangeRatesApi($defaultCurrency);
+        }
+
         if ($this->input->getOption('google')) {
             // Get rates from google
             return $this->updateFromGoogle($defaultCurrency);
@@ -76,6 +82,43 @@ class Update extends Command
             // Get rates from OpenExchangeRates
             return $this->updateFromOpenExchangeRates($defaultCurrency, $api);
         }
+    }
+
+    /**
+     * Fetch rates from the API
+     *
+     * @param $defaultCurrency
+     */
+    private function updateFromExchangeRatesApi($defaultCurrency)
+    {
+        $this->info('Updating currency exchange rates from ExchangeRatesApi.io...');
+
+        // Make request
+        if (!$defaultCurrency == 'EUR'){
+            $content = json_decode($this->request("https://api.exchangeratesapi.io/latest?base={$defaultCurrency}"));
+        }
+        else{
+            $content = json_decode($this->request("https://api.exchangeratesapi.io/latest"));
+        }
+
+
+        // Error getting content?
+        if (isset($content->error)) {
+            $this->error($content->description);
+
+            return;
+        }
+
+        // Update each rate
+        foreach ($content->rates as $code => $value) {
+            $this->currency->getDriver()->update($code, [
+                'exchange_rate' => $value ?? '1',
+            ]);
+        }
+
+        $this->currency->clearCache();
+
+        $this->info('Update!');
     }
 
     /**
@@ -133,7 +176,7 @@ class Update extends Command
             if (Str::contains($response, 'bld>')) {
                 $data = explode('bld>', $response);
                 $rate = explode($code, $data[1])[0];
-                
+
                 $this->currency->getDriver()->update($code, [
                     'exchange_rate' => $rate,
                 ]);
